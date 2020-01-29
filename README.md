@@ -6,4 +6,4 @@ In this document a fuel efficiency of 1970's automobiles is the main subject of 
 1. Is an automatic transmission better than manual in regard to US miles per gallon (MPG) travelled?
 2. And what is the actual MPG difference between automatic and manual transmissions?
 
-Judging by the results of the study, it appears that there is in fact a significant difference in MPG between the 2 types of transmissions. However, there are certain caveats...
+Judging by the results of the study, it appears that there is in fact a significant difference in MPG between the 2 types of transmissions. Unfortunately, the data for this study does not provide satisfactory basis for more or less reliable quantification of the difference in fuel economy between 2 groups.
