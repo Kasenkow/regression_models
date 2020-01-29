@@ -29,7 +29,7 @@ In this document a fuel efficiency of 1970's automobiles is the main subject of 
 1. Is an automatic transmission better than manual in regard to US miles per gallon (MPG) travelled?
 2. And what is the actual MPG difference between automatic and manual transmissions?
 
-Judging by the results of the study, it appears that there is in fact a significant difference in MPG between the 2 types of transmissions. However, there are certain caveats...
+Judging by the results of the study, it appears that there is in fact a significant difference in MPG between the 2 types of transmissions. Unfortunately, the data for this study does not provide satisfactory basis for more or less reliable quantification of the difference in fuel economy between 2 groups.
 
 # 2. Analysis
 First, we have to prepare the data:
@@ -86,32 +86,54 @@ summary(fit0)
 
 ### 2.3.2. Model selection
 
-We can include additional covariates into our model, buliding **several models**. As was mentioned before, we should probably start with the weight ("wt") and then gradually include more variables, leaving previous features untouched (so-called "nested" approach). We can then use ANOVA to test the significance of "model improvement". The entire procedure can be found in the [corresponding section of Appendix](#selection).
+We can include additional covariates into our model, buliding **several models**. As was mentioned before, we should probably start with the weight ("wt") and then gradually include more variables, leaving previous features untouched (so-called "nested" approach). We can then use ANOVA to test the significance of "model improvement". The entire procedure can be found in the [corresponding section of Appendix](#selection1).
 
-Note that we recentered our continuous variables for better interpretability of coefficients [^1]. Thus, the final model ("finfit") can be interpreted in the following terms: if we compare average models (those that have the average weight, displacement, gross horsepower and 1/4 mile time), models with manual transmission tend to travel ~3.5 miles per gallon of petrol longer than models with automatic transmission. The **inference here is that with 95% certainty** we can say that the mentioned cars are travelling from **~0.42** to **~6.52** miles longer on a gallon of petrol:
-```{r hidden, include=FALSE}
-finfit <- lm(mpg ~ am + I(wt - mean(wt)) + I(disp - mean(disp)) + I(hp - mean(hp)) +
+Note that we recentered our continuous variables for better interpretability of coefficients [^1]. Thus, the final model ("prefin") can be interpreted in the following terms: if we compare average models (those that have the average weight, displacement, gross horsepower and 1/4 mile time), models with manual transmission tend to travel ~3.5 miles per gallon of petrol longer than models with automatic transmission. The **inference here is that with 95% certainty** we can say that the mentioned cars are travelling from **~0.42** to **~6.52** miles longer on a gallon of petrol:
+```{r hid1, include=FALSE}
+prefin <- lm(mpg ~ am + I(wt - mean(wt)) + I(disp - mean(disp)) + I(hp - mean(hp)) +
                    I(qsec - mean(qsec)), data = m_df)
 ```
 
 ```{r infrnc}
-sc <- summary(finfit)$coef
-c_int <- sc[2, 1] + c(-1, 1) * qt(.975, df = finfit$df) * sc[2, 2]
+sc <- summary(prefin)$coef
+c_int <- sc[2, 1] + c(-1, 1) * qt(.975, df = prefin$df) * sc[2, 2]
 cat("CI 95% for transmission coefficient is from", round(c_int, 2)[1], "to", round(c_int, 2)[2])
 ```
 
-### 2.3.3. Model diagnostics
-
-Here are the residuals plots:
+Preliminary diagnostics. Here are the residuals plots:
 ```{r dgnstcs}
 par(mfrow = c(2,2))
-plot(finfit)
+plot(prefin)
 ```
 
 On the $1^{st}$ plot (fitted values vs residuals) we can notice that there is a certain "hockey stick"-like pattern, which basically means that our model fit is not optimal.
 
 The second plot in the series shows us that the standardised residuals are not really normally distributed.
-Overall, observations 17, 18 and 20 (Chrysler Imperial, Fiat 128 and Toyota Corolla) break the linear pattern slightly. This might be suggestive of the need for non-linear model.
+Overall, observations 17, 18 and 20 (Chrysler Imperial, Fiat 128 and Toyota Corolla) break the linear pattern slightly. This might be suggestive of the need for non-linear relationship model.
+
+One of the simplest variable transformation is the log-transformation. This can improve the quality of our model without loss in the interpretability. There are 3 main options for each of the model specification: we can either take the log of the response variable, or take the log of the predictors, or do both (for simplicity we would not consider options where only part of the continuous predictors will be transformed). In the exploratory phase of the analysis it was shown that perhaps the log transformation of the predictors is the best option we have.
+
+Now, conducting the same procedure as before, we are arrriving at the following specification:
+$$mpg = \beta_0 + am + log(wt) + log(disp) + log(hp) + \epsilon$$
+The details of selection process can be found in the [according section of Appendix](#selection2)
+```{r hid2, include = FALSE}
+finfit <- lm(mpg ~ am + log(wt) + log(disp) + log(hp), data = m_df)
+```
+
+Summary of the model:
+```{r sumfin}
+summary(finfit)
+```
+
+### 2.3.3. Model diagnostics
+
+```{r dgnstcs2}
+par(mfrow = c(2,2))
+plot(finfit)
+```
+
+Now the explained variance of the model has improved. But as is shown on the residuals plots, some problems with fit are still present. And a couple of coefficients, transmission type - one of them, became insignificantly different from zero. Thus, we cannot draw inference from those. Apparently, the task of explanation of MPG variance among cars is not that strongly dependent on the type of transmission. Further investigation of the subject can be done with a bigger dataset.
+
 
 [^1]: One can notice from the summary of our final model that displacement and gross horsepower are not statistically significant. This happend most likely due to the high correlation between them. The decision to include them in the model was based on 2 facts: (1) removing them would lead to biased coefficients and (2) the only important coefficients for the interpretation are intercept and dummy variable "am" (transmission).
 
@@ -140,7 +162,7 @@ shapiro.test(m_df$mpg)
 t.test(mpg ~ am, m_df)
 ```
 
-#### Model selection {#selection}
+#### Model selection 1 {#selection1}
 ```{r select1}
 fit1 <- lm(mpg ~ am + I(wt - mean(wt)), data = m_df)
 fit2 <- lm(mpg ~ am + I(wt - mean(wt)) + I(disp - mean(disp)), data = m_df)
@@ -151,7 +173,20 @@ anova(fit0, fit1, fit2, fit3, fit4)
 ```
 apparently, fit4 does not improve our model. We replace "drat" variable with "qsec" and start
 ```{r select2}
-finfit <- lm(mpg ~ am + I(wt - mean(wt)) + I(disp - mean(disp)) + I(hp - mean(hp)) +
+prefin <- lm(mpg ~ am + I(wt - mean(wt)) + I(disp - mean(disp)) + I(hp - mean(hp)) +
                    I(qsec - mean(qsec)), data = m_df)
-anova(fit0, fit1, fit2, fit3, finfit)
+anova(fit0, fit1, fit2, fit3, prefin)
+```
+
+#### Model selection 2 {#selection2}
+```{r select3}
+fit1a <- lm(mpg ~ am + log(wt), data = m_df)
+fit2a <- lm(mpg ~ am + log(wt) + log(disp), data = m_df)
+finfit <- lm(mpg ~ am + log(wt) + log(disp) + log(hp), data = m_df)
+anova(fit0, fit1a, fit2a, finfit)
+```
+we can also test inclusion of qsec variable, but it seems that this is redundant feature.
+```{r select4}
+fit4d <- lm(mpg ~ am + log(wt) + log(disp) + log(hp) + log(qsec), data = m_df)
+anova(fit0, fit1a, fit2a, finfit, fit4d)
 ```
