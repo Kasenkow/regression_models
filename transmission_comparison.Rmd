@@ -1,0 +1,157 @@
+---
+title: "Fuel efficiency of 1970s' cars: manual transmission vs automatic"
+author: "Anton Kasenkov"
+date: "27 01 2020"
+output:
+        html_document:
+                code_folding: hide
+                keep_md: true
+                toc: true
+---
+<style>
+body {
+text-align: justify}
+</style>
+
+```{r setup, message = FALSE, results = "hide"}
+knitr::opts_chunk$set(echo = TRUE,
+                      fig.width = 12,
+                      fig.height = 8,
+                      warning = FALSE,
+                      message = FALSE)
+Sys.setlocale(locale = "English")
+pacman::p_load(tidyverse, car, psych, DT)
+```
+
+# 1. Executive summary
+In this document a fuel efficiency of 1970's automobiles is the main subject of interest. In particular, there are 2 major questions of the research:
+
+1. Is an automatic transmission better than manual in regard to US miles per gallon (MPG) travelled?
+2. And what is the actual MPG difference between automatic and manual transmissions?
+
+Judging by the results of the study, it appears that there is in fact a significant difference in MPG between the 2 types of transmissions. However, there are certain caveats...
+
+# 2. Analysis
+First, we have to prepare the data:
+```{r prepdata}
+m_df <-
+        as_tibble(mtcars, rownames = "models") %>%
+        mutate_at("vs", ~factor(., labels = c("V", "S"))) %>% 
+        mutate_at("am", ~factor(., labels = c("auto", "manual"))) %>% 
+        mutate_at(c("cyl", "gear", "carb"), ~factor(.))
+```
+
+## 2.1. Data exploration
+The basic overview of the data:
+```{r strdata}
+str(m_df)
+```
+
+The MPG difference can be visualised with the simple violin plots:
+```{r violin}
+ggplot(m_df, aes(y = mpg, x = am, fill = am))+
+        geom_violin(draw_quantiles = 0.5, lwd = 1.5)+
+    labs(title = "MPG by types of transmission",
+         x = "type of transmission",
+         y = "miles per gallon")+
+    theme_minimal()
+```
+
+It seems like there is a difference between the 2 groups. An attempt can be made to extrapolate this colnclusion beyond the sample and to quantify this difference. But to accomplish the latter, we have to first explore the relationships between the possible predictors of MPG. To do this, we can look at the correlations of continuous variables, namely, "mpg", "disp" (displacement (cu.in.)), "drat" (rear axle ratio), "wt" (weight in 1000 lbs), "qsec" (1/4 mile time). The corresponding plot can be found [here](#corr).
+
+Out of 5 mentioned variables (excluding MPG) 3 are highly linearly correlated with each other. This means possible problems for estimation of variable contribution to the difference in MPG (multicollinearity):
+```{r corplot}
+cor.plot(m_df[c("mpg", "hp", "disp", "drat", "wt", "qsec")])
+```
+
+We can also compare variables on their pairwise relationship with MPG. This can give us clues on the possible order of predictor inclusion for the final model. The strongest magnitude of linear relationship can be noticed in the weight variable ($\rho \approx -0.87$).
+
+## 2.2. Is an automatic or manual transmission better for MPG?
+We can test our "mpg" variable for normality with Shapiro-Wilk test of normality.
+From here and forward on we would use significance level ($\alpha$) = 5%.
+[results are here](#shapiro)
+With this data we cannot reject the hypothesis that in the overall "population" of the 1970s cars miles per gallon are distributed normally. Of course, we have only 32 samples, so perhaps collecting more data would show otherwise.
+By assuming the normality of mpg we can perform a t-test to compare both groups of observations - automatic and manual transmission.
+
+The [output](#ttest) of t-test allows us to conclude that there is in fact a statistically significant difference between the 2 types of transmissions in terms of their fuel economy: automobiles with manual transmission tend to travel longer distances on the same amount of petrol. In the following section we will attempt to estimate this difference.
+
+## 2.3. What is the MPG difference between automatic and manual transmissions?
+### 2.3.1. Model fit
+
+We begin with the basic model: $mpg = \beta_0 + \beta_1 * am + \epsilon$. The interpretation of this model is that on average, cars with automatic transmission tend to travel ~17.1 miles per gallon of petrol, while an "average" car with the manual transmission will travel ~7.2 miles longer. However, the quality of the model is not very good (adjusted $R^2 \approx 0.34$), we can do better:
+```{r basic}
+fit0 <- lm(mpg ~ am, data = m_df)
+summary(fit0)
+```
+
+### 2.3.2. Model selection
+
+We can include additional covariates into our model, buliding **several models**. As was mentioned before, we should probably start with the weight ("wt") and then gradually include more variables, leaving previous features untouched (so-called "nested" approach). We can then use ANOVA to test the significance of "model improvement". The entire procedure can be found in the [corresponding section of Appendix](#selection).
+
+Note that we recentered our continuous variables for better interpretability of coefficients [^1]. Thus, the final model ("finfit") can be interpreted in the following terms: if we compare average models (those that have the average weight, displacement, gross horsepower and 1/4 mile time), models with manual transmission tend to travel ~3.5 miles per gallon of petrol longer than models with automatic transmission. The **inference here is that with 95% certainty** we can say that the mentioned cars are travelling from **~0.42** to **~6.52** miles longer on a gallon of petrol:
+```{r hidden, include=FALSE}
+finfit <- lm(mpg ~ am + I(wt - mean(wt)) + I(disp - mean(disp)) + I(hp - mean(hp)) +
+                   I(qsec - mean(qsec)), data = m_df)
+```
+
+```{r infrnc}
+sc <- summary(finfit)$coef
+c_int <- sc[2, 1] + c(-1, 1) * qt(.975, df = finfit$df) * sc[2, 2]
+cat("CI 95% for transmission coefficient is from", round(c_int, 2)[1], "to", round(c_int, 2)[2])
+```
+
+### 2.3.3. Model diagnostics
+
+Here are the residuals plots:
+```{r dgnstcs}
+par(mfrow = c(2,2))
+plot(finfit)
+```
+
+On the $1^{st}$ plot (fitted values vs residuals) we can notice that there is a certain "hockey stick"-like pattern, which basically means that our model fit is not optimal.
+
+The second plot in the series shows us that the standardised residuals are not really normally distributed.
+Overall, observations 17, 18 and 20 (Chrysler Imperial, Fiat 128 and Toyota Corolla) break the linear pattern slightly. This might be suggestive of the need for non-linear model.
+
+[^1]: One can notice from the summary of our final model that displacement and gross horsepower are not statistically significant. This happend most likely due to the high correlation between them. The decision to include them in the model was based on 2 facts: (1) removing them would lead to biased coefficients and (2) the only important coefficients for the interpretation are intercept and dummy variable "am" (transmission).
+
+# 3. Appendix {#apndx}
+
+#### Data exploration (scatter plot) {#scatter}
+```{r scatter}
+ggplot(m_df, aes(x = wt, y = mpg, color = am))+
+        geom_point(cex = 5, alpha = .5)+
+        geom_label(aes(label = models), label.size = 0.2)+
+        labs(title = "MPG and weight",
+             color = "transmission",
+             x = "weight in 1000 lbs",
+             y = "miles per gallon")+
+        geom_smooth(method = lm, se = FALSE)+
+        theme_minimal()
+```
+
+#### Normailty test for MPG {#shapiro}
+``` {r normmpg}
+shapiro.test(m_df$mpg)
+```
+
+#### T-test {#ttest}
+```{r ttest}
+t.test(mpg ~ am, m_df)
+```
+
+#### Model selection {#selection}
+```{r select1}
+fit1 <- lm(mpg ~ am + I(wt - mean(wt)), data = m_df)
+fit2 <- lm(mpg ~ am + I(wt - mean(wt)) + I(disp - mean(disp)), data = m_df)
+fit3 <- lm(mpg ~ am + I(wt - mean(wt)) + I(disp - mean(disp)) + I(hp - mean(hp)), data = m_df)
+fit4 <- lm(mpg ~ am + I(wt - mean(wt)) + I(disp - mean(disp)) + I(hp - mean(hp)) +
+                   I(drat - mean(drat)), data = m_df)
+anova(fit0, fit1, fit2, fit3, fit4)
+```
+apparently, fit4 does not improve our model. We replace "drat" variable with "qsec" and start
+```{r select2}
+finfit <- lm(mpg ~ am + I(wt - mean(wt)) + I(disp - mean(disp)) + I(hp - mean(hp)) +
+                   I(qsec - mean(qsec)), data = m_df)
+anova(fit0, fit1, fit2, fit3, finfit)
+```
